@@ -1,0 +1,22 @@
+{
+  "name": "codeshifter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/lodash": "^4.14.170",
+    "jscodeshift": "^0.12.0",
+    "lodash": "^4.17.21",
+    "ts-node": "^10.0.0",
+    "typescript": "^4.3.4"
+  },
+  "devDependencies": {
+    "@types/jscodeshift": "^0.11.0",
+    "@types/node": "^15.12.4"
+  }
+}
