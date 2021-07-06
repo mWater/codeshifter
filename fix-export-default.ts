@@ -67,6 +67,32 @@ export default function transformer(file: FileInfo, api: API) {
         .replaceWith(null)
     })
     .toSource();
+
+    src = j(src)
+      .find(j.ExportDefaultDeclaration)
+      .filter(path =>   
+        path.node.declaration.type == "AssignmentExpression"
+        && path.node.declaration.left.type == "Identifier"
+        && path.node.declaration.right.type == "ClassExpression")
+      .forEach(path => {
+        // Check if right type
+        if (path.node.declaration.type != "AssignmentExpression") {
+          return
+        }
+        const name = (path.node.declaration.left as Identifier).name
+
+        // Check return
+        const clz = (path.node.declaration.right as ClassExpression)
+        path.node.declaration = clz
+
+        // Remove let
+        j(searchUp(path, "Program"))
+          .find(j.VariableDeclaration)
+          .filter(p => p.node.declarations[0].type == "VariableDeclarator" && p.node.declarations[0].id.type == "Identifier" && p.node.declarations[0].id.name == name)
+          .replaceWith(null)
+      })
+      .toSource();
+
     return src
 }
 
