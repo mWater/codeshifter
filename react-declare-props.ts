@@ -1,4 +1,4 @@
-import { FileInfo, API, ExpressionStatement, AssignmentExpression, ObjectExpression, Property, Identifier, MemberExpression, ASTPath, ClassExpression, ExportDefaultDeclaration, ClassDeclaration } from 'jscodeshift'
+import { FileInfo, API, ExpressionStatement, AssignmentExpression, ObjectExpression, Property, Identifier, MemberExpression, ASTPath, ClassExpression, ExportDefaultDeclaration, ClassDeclaration, ObjectProperty } from 'jscodeshift'
 
 export const parser = 'ts'
 
@@ -9,7 +9,7 @@ interface PropType {
   comment: string | null
 }
 
-function extractPropTypes(propTypes: Property[]): PropType[] {
+function extractPropTypes(propTypes: ObjectProperty[]): PropType[] {
   const props: PropType[] = []
 
   // Extract propTypes
@@ -93,41 +93,29 @@ export default function transformer(file: FileInfo, api: API) {
   let x = j(src).get()
 
   src = j(src)
-    .find(j.ClassMethod)
-    .filter(path => path.node.key.type == "Identifier" && path.node.key.name == "initClass")
+    .find(j.ClassProperty)
+    .filter(path => path.node.key.type == "Identifier" && path.node.key.name == "propTypes" && path.node.value != null && path.node.value.type == "ObjectExpression")
     .forEach(path => {
-      // Find propTypes and thus if React
-      const propTypesPath = j(path).find(j.Identifier).filter(p => p.node.name == "propTypes").paths()[0]
-      if (!propTypesPath) {
+      // Get propTypes
+      const properties = (path.node.value! as ObjectExpression).properties as ObjectProperty[]
+      const propTypes = extractPropTypes(properties)
+
+      let classPath = searchUp(path, "ClassDeclaration")
+      if (!classPath) {
+        console.log(`Class not found`)
         return
       }
 
-      // Get propTypes
-      const properties = j(propTypesPath).closest(j.AssignmentExpression).find(j.ObjectExpression).get().node.properties
-      const propTypes = extractPropTypes(properties)
-
-      let classPath = searchUp(path, "ClassExpression")
-      let className: string
-
-      // If default kind
-      if (classPath) {
-        className = (classPath.node as ClassExpression).id!.name
-
-        // Clean up definition
-        const exportDecl = searchUp(path, "ExportDefaultDeclaration")
-        if (exportDecl) {
-          (exportDecl.node as ExportDefaultDeclaration).declaration = classPath.node as any
-        }
-
-        // TODO Comments?
+      // Check that not typed
+      if ((classPath.node as ClassDeclaration).superTypeParameters 
+        && (classPath.node as ClassDeclaration).superTypeParameters!.params
+        && (classPath.node as ClassDeclaration).superTypeParameters!.params.length > 0) {
+        console.log(`Already generic`)
+        return
       }
-      else {
-        classPath = searchUp(path, "ClassDeclaration")
-        className = (classPath.node as ClassDeclaration).id!.name
-      }
-
+      let className = (classPath.node as ClassDeclaration).id!.name
+      
       console.log(className)
-
 
       // Add interface
       const ifcode = `interface ${className}Props {${propTypes.map(prop => `\n${prop.comment ? `  /** ${prop.comment} */\n` : "  "}${prop.name}${prop.optional ? "?" : ""}: ${prop.type}`)}
@@ -148,79 +136,10 @@ export default function transformer(file: FileInfo, api: API) {
         throw new Error("SUPERCLASS")
       }
 
-      // Check if initClass is empty
-      if (j(path).find(j.AssignmentExpression).paths().length == 1) {
-        // Remove initClass function 
-        path.replace()
+      // Remove property
+      path.replace()
 
-        // Remove initClass call
-        j(searchUp(path, "Program"))
-          .find(j.CallExpression)
-          .filter(path => path.node.callee.type == "MemberExpression" 
-            && path.node.callee.property.type == "Identifier" 
-            && path.node.callee.property.name == "initClass"
-            && path.node.callee.object.type == "Identifier"
-            && path.node.callee.object.name == className)
-          .replaceWith(null)
-      }
-      else {
-        // Just remove expression statement
-        j(propTypesPath).closest(j.ExpressionStatement).replaceWith(null)
-
-        // Ensure initClass is called
-        if (j(searchUp(path, "Program"))
-          .find(j.CallExpression)
-          .filter(path => path.node.callee.type == "MemberExpression" 
-            && path.node.callee.property.type == "Identifier" 
-            && path.node.callee.property.name == "initClass"
-            && path.node.callee.object.type == "Identifier"
-            && path.node.callee.object.name == className)
-          .paths().length == 0) {
-          topPath.insertAfter(`\n${className}.initClass()`)
-        }
-      }
-
-      // Remove let
-      j(searchUp(path, "Program"))
-        .find(j.VariableDeclaration)
-        .filter(p => p.node.declarations[0].type == "VariableDeclarator" && p.node.declarations[0].id.type == "Identifier" && p.node.declarations[0].id.name == className)
-        .replaceWith(null)
     })
     .toSource();
     return src
 }
-
-
-
-    // const killLets: string[] = []
-
-    // // Simplify complex export
-    // src = j(src)
-    //   .find(j.ExportDefaultDeclaration)
-    //   .forEach(p => {
-    //     // console.log(p.node.declaration)
-        
-    //     const comments = p.node.comments
-    //     const paths = j(p).find(j.ClassExpression).paths()
-    //     if (paths.length == 1 && classNames.includes(paths[0].node.id!.name)) {
-    //       // console.log(paths[0].node)
-    //       killLets.push(paths[0].node.id!.name)
-    //       p.node.declaration = paths[0].node
-    //       p.node.comments = comments
-    //     }
-    //   })
-    //   .toSource()
-
-    // // Remove let
-    // for (const className of killLets) {
-    //   src = j(src)
-    //     .find(j.VariableDeclaration)
-    //     .filter(p => p.node.declarations[0].type == "VariableDeclarator" && p.node.declarations[0].id.type == "Identifier" && p.node.declarations[0].id.name == className)
-    //     // .forEach(p => {
-    //     //   console.log(p.node.id)
-    //     // })
-    //     .replaceWith(null)
-    //     .toSource()
-    // }
-
-
